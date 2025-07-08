@@ -6,6 +6,7 @@
 #include <minwindef.h>
 #include <winbase.h>
 
+#include <cctype>
 #include <cstdlib>
 #include <iostream>
 
@@ -20,8 +21,10 @@ void enableRawMode() {
     std::atexit(disableRawMode);
 
     DWORD rawMode = originalMode;
+    rawMode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
     rawMode &= ~ENABLE_ECHO_INPUT;
     rawMode &= ~ENABLE_LINE_INPUT;
+    rawMode &= ~ENABLE_PROCESSED_INPUT;
     SetConsoleMode(hInput, rawMode);
 }
 
@@ -37,6 +40,15 @@ int main() {
 
     char c;
     DWORD bytesRead;
-    while (ReadFile(hInput, &c, sizeof(c), &bytesRead, NULL) && c != 'q');
+    while (ReadFile(hInput, &c, sizeof(c), &bytesRead, NULL) && c != 'q') {
+        if (bytesRead > 0) {
+            std::cout << "\n\nbytes Read are :" << bytesRead << "\n";
+        }
+        if (std::iscntrl(c)) {
+            std::cout << (int)c << "\n";
+        } else {
+            std::cout << "character: " << c << "\t" << (int)c << "\n";
+        }
+    }
     return 0;
 }
