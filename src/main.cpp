@@ -9,9 +9,9 @@
 #include <winbase.h>
 #include <winnt.h>
 
-#include <cctype>
 #include <cstdlib>
 #include <iostream>
+#include <string>
 
 /*** DEFINES ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -24,8 +24,10 @@ HANDLE hOutput;
 
 /*** TERMINAL ***/
 void die(LPCSTR lpMessage) {
-    std::cerr << "Error: " << lpMessage << " ErrorCode: " << GetLastError()
-              << std::endl;
+    std::string clearScrrenSequnce = "\x1b[2J\x1b[H";
+
+    std::cerr << clearScrrenSequnce << "Error: " << lpMessage
+              << " ErrorCode: " << GetLastError() << std::endl;
     exit(1);
 }
 
@@ -56,6 +58,42 @@ void enableRawMode() {
     }
 }
 
+void exitSucces() {
+    DWORD charactersWritten;
+
+    std::string outputBuffer = "\x1b[2J\x1b[H";
+
+    if (!WriteConsole(hOutput, outputBuffer.data(), outputBuffer.size(),
+                      &charactersWritten, NULL)) {
+        die("Write");
+    }
+    exit(0);
+}
+
+/*** OUTPUT ***/
+
+void editorDrawRows(std::string &outputBuffer) {
+    int y;
+    for (y = 0; y < 24; y++) {
+        outputBuffer += "~\r\n";
+    }
+}
+
+void editorRefreshScreen() {
+    DWORD charactersWritten;
+
+    std::string outputBuffer = "\x1b[2J\x1b[H";
+    editorDrawRows(outputBuffer);
+    outputBuffer += "\x1b[H";
+
+    if (!WriteConsole(hOutput, outputBuffer.data(), outputBuffer.size(),
+                      &charactersWritten, NULL)) {
+        die("Write");
+    }
+}
+
+/*** INPUT ***/
+
 char editorReadKey() {
     char c;
     DWORD bytesRead;
@@ -70,7 +108,7 @@ void editorProcessKeyPress() {
 
     switch (key) {
         case CTRL_KEY('q'):
-            exit(0);
+            exitSucces();
             break;
     }
 }
@@ -89,6 +127,7 @@ int main() {
     enableRawMode();
 
     while (true) {
+        editorRefreshScreen();
         editorProcessKeyPress();
     }
     return 0;
