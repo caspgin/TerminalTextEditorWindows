@@ -20,11 +20,10 @@ void enableRawMode() {
     GetConsoleMode(hInput, &originalMode);
     std::atexit(disableRawMode);
 
-    DWORD rawMode = originalMode;
+    DWORD rawMode = 0;
+    rawMode |= ENABLE_WINDOW_INPUT;
     rawMode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
-    rawMode &= ~ENABLE_ECHO_INPUT;
-    rawMode &= ~ENABLE_LINE_INPUT;
-    rawMode &= ~ENABLE_PROCESSED_INPUT;
+
     SetConsoleMode(hInput, rawMode);
 }
 
@@ -38,16 +37,42 @@ int main() {
 
     enableRawMode();
 
-    char c;
-    DWORD bytesRead;
-    while (ReadFile(hInput, &c, sizeof(c), &bytesRead, NULL) && c != 'q') {
-        if (bytesRead > 0) {
-            std::cout << "\n\nbytes Read are :" << bytesRead << "\n";
-        }
-        if (std::iscntrl(c)) {
-            std::cout << (int)c << "\n";
-        } else {
-            std::cout << "character: " << c << "\t" << (int)c << "\n";
+    INPUT_RECORD inputRecord;
+    DWORD recordRead;
+    while (ReadConsoleInput(hInput, &inputRecord, sizeof(inputRecord),
+                            &recordRead)) {
+        KEY_EVENT_RECORD& keyevent = inputRecord.Event.KeyEvent;
+        if (keyevent.bKeyDown) {
+            char c = keyevent.uChar.AsciiChar;
+            WORD vkCode = keyevent.wVirtualKeyCode;
+            DWORD controlState = keyevent.dwControlKeyState;
+            bool ctrlPressed =
+                (controlState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0;
+
+            if (ctrlPressed) {
+                std::cout << "Ctrl+" << (char)vkCode << " (VK:" << vkCode
+                          << ")\n";
+
+                // Exit on Ctrl+Q
+                if (vkCode == 'Q') {
+                    break;
+                }
+            } else if (c != 0) {
+                // Regular character
+                if (std::iscntrl(c)) {
+                    std::cout << "Control char: " << (int)c << "\n";
+                } else {
+                    std::cout << "Character: " << c << " (" << (int)c << ")\n";
+                }
+
+                if (c == 'q') {
+                    break;
+                }
+            } else {
+                // Special key (arrow keys, function keys, etc.)
+                std::cout << "Special key VK: " << vkCode << "\t"
+                          << (char)vkCode << "\n";
+            }
         }
     }
     return 0;
