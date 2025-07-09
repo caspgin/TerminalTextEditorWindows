@@ -24,9 +24,9 @@ HANDLE hOutput;
 
 /*** TERMINAL ***/
 void die(LPCSTR lpMessage) {
-    std::string clearScrrenSequnce = "\x1b[2J\x1b[H";
+    std::string clearScreen = "\x1b[2J\x1b[H";
 
-    std::cerr << clearScrrenSequnce << "Error: " << lpMessage
+    std::cerr << clearScreen << "Error: " << lpMessage
               << " ErrorCode: " << GetLastError() << std::endl;
     exit(1);
 }
