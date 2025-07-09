@@ -13,6 +13,9 @@
 #include <cstdlib>
 #include <iostream>
 
+/*** DEFINES ***/
+#define CTRL_KEY(k) ((k) & 0x1f)
+
 /*** DATA ***/
 DWORD ogInputMode;
 DWORD ogOutputMode;
@@ -81,7 +84,7 @@ int main() {
             std::cout << "character: " << c << "\t" << (int)c << "\n";
         }
 
-        if (c == 'q') {
+        if (c == CTRL_KEY('q')) {
             break;
         }
     }
