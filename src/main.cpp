@@ -56,6 +56,25 @@ void enableRawMode() {
     }
 }
 
+char editorReadKey() {
+    char c;
+    DWORD bytesRead;
+    while (!ReadFile(hInput, &c, sizeof(c), &bytesRead, NULL)) {
+        die("read");
+    }
+    return c;
+}
+
+void editorProcessKeyPress() {
+    char key = editorReadKey();
+
+    switch (key) {
+        case CTRL_KEY('q'):
+            exit(0);
+            break;
+    }
+}
+
 /*** INIT ***/
 int main() {
     hInput = GetStdHandle(STD_INPUT_HANDLE);
@@ -69,24 +88,8 @@ int main() {
 
     enableRawMode();
 
-    char c;
-    DWORD bytesRead;
     while (true) {
-        if (!ReadFile(hInput, &c, sizeof(c), &bytesRead, NULL)) {
-            die("read");
-        }
-        if (bytesRead > 0) {
-            std::cout << "\n\nbytes Read are :" << bytesRead << "\n";
-        }
-        if (std::iscntrl(c)) {
-            std::cout << (int)c << "\n";
-        } else {
-            std::cout << "character: " << c << "\t" << (int)c << "\n";
-        }
-
-        if (c == CTRL_KEY('q')) {
-            break;
-        }
+        editorProcessKeyPress();
     }
     return 0;
 }
