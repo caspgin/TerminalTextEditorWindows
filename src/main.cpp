@@ -102,10 +102,10 @@ void abAppend(std::string &apBuf, const std::string &appendData) {
 void editorDrawRows(std::string &outputBuffer) {
     int y;
     for (y = 0; y < EC.bHeight; y++) {
+        abAppend(outputBuffer, "~");
+        abAppend(outputBuffer, "\x1b[K");
         if (y < EC.bHeight - 1) {
-            outputBuffer += "~\r\n";
-        } else {
-            outputBuffer += "~";
+            abAppend(outputBuffer, "\r\n");
         }
     }
 }
@@ -114,7 +114,6 @@ void editorRefreshScreen() {
     DWORD charactersWritten;
 
     abAppend(apBuf, "\x1b[?25l");
-    abAppend(apBuf, "\x1b[2J");
     abAppend(apBuf, "\x1b[H");
 
     editorDrawRows(apBuf);
