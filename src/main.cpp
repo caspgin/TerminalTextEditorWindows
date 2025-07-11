@@ -3,24 +3,34 @@
 /*** INCLUDES ***/
 #include <Windows.h>
 #include <consoleapi.h>
+#include <consoleapi2.h>
 #include <errhandlingapi.h>
 #include <handleapi.h>
 #include <minwindef.h>
 #include <winbase.h>
+#include <wincontypes.h>
 #include <winnt.h>
 
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <string>
 
 /*** DEFINES ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
 
 /*** DATA ***/
-DWORD ogInputMode;
-DWORD ogOutputMode;
-HANDLE hInput;
-HANDLE hOutput;
+
+struct EditorConfig {
+    DWORD ogInputMode;
+    DWORD ogOutputMode;
+    HANDLE hInput;
+    HANDLE hOutput;
+    SHORT bWidth;
+    SHORT bHeight;
+};
+
+struct EditorConfig EC;
 
 /*** TERMINAL ***/
 void die(LPCSTR lpMessage) {
@@ -32,14 +42,14 @@ void die(LPCSTR lpMessage) {
 }
 
 void disableRawMode() {
-    SetConsoleMode(hInput, ogInputMode);
-    SetConsoleMode(hOutput, ogOutputMode);
+    SetConsoleMode(EC.hInput, EC.ogInputMode);
+    SetConsoleMode(EC.hOutput, EC.ogOutputMode);
 }
 
 void enableRawMode() {
     // Turn off echo
-    if (!GetConsoleMode(hInput, &ogInputMode) ||
-        !GetConsoleMode(hOutput, &ogOutputMode)) {
+    if (!GetConsoleMode(EC.hInput, &EC.ogInputMode) ||
+        !GetConsoleMode(EC.hOutput, &EC.ogOutputMode)) {
         die("Could not get Console Mode");
     }
     std::atexit(disableRawMode);
@@ -52,8 +62,8 @@ void enableRawMode() {
     DWORD rawOutputMode = 0;
     rawOutputMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
     rawOutputMode |= ENABLE_PROCESSED_OUTPUT;
-    if (!SetConsoleMode(hInput, rawInputMode) ||
-        !SetConsoleMode(hOutput, rawOutputMode)) {
+    if (!SetConsoleMode(EC.hInput, rawInputMode) ||
+        !SetConsoleMode(EC.hOutput, rawOutputMode)) {
         die("Could not set Console Mode");
     }
 }
@@ -63,18 +73,28 @@ void exitSucces() {
 
     std::string outputBuffer = "\x1b[2J\x1b[H";
 
-    if (!WriteConsole(hOutput, outputBuffer.data(), outputBuffer.size(),
+    if (!WriteConsole(EC.hOutput, outputBuffer.data(), outputBuffer.size(),
                       &charactersWritten, NULL)) {
         die("Write");
     }
     exit(0);
 }
 
+void getWindowSize() {
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (!GetConsoleScreenBufferInfo(EC.hOutput, &csbi)) {
+        die("Screen Buffer Info not available");
+    }
+
+    EC.bWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    EC.bHeight = csbi.srWindow.Top - csbi.srWindow.Bottom + 1;
+}
+
 /*** OUTPUT ***/
 
 void editorDrawRows(std::string &outputBuffer) {
     int y;
-    for (y = 0; y < 24; y++) {
+    for (y = 0; y < EC.bHeight; y++) {
         outputBuffer += "~\r\n";
     }
 }
@@ -86,7 +106,7 @@ void editorRefreshScreen() {
     editorDrawRows(outputBuffer);
     outputBuffer += "\x1b[H";
 
-    if (!WriteConsole(hOutput, outputBuffer.data(), outputBuffer.size(),
+    if (!WriteConsole(EC.hOutput, outputBuffer.data(), outputBuffer.size(),
                       &charactersWritten, NULL)) {
         die("Write");
     }
@@ -97,7 +117,7 @@ void editorRefreshScreen() {
 char editorReadKey() {
     char c;
     DWORD bytesRead;
-    while (!ReadFile(hInput, &c, sizeof(c), &bytesRead, NULL)) {
+    while (!ReadFile(EC.hInput, &c, sizeof(c), &bytesRead, NULL)) {
         die("read");
     }
     return c;
@@ -114,18 +134,22 @@ void editorProcessKeyPress() {
 }
 
 /*** INIT ***/
-int main() {
-    hInput = GetStdHandle(STD_INPUT_HANDLE);
-    if (hInput == INVALID_HANDLE_VALUE) {
+void initStdHandles() {
+    EC.hInput = GetStdHandle(STD_INPUT_HANDLE);
+    if (EC.hInput == INVALID_HANDLE_VALUE) {
         die("Could not get standard input handle.");
     }
-    hOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hOutput == INVALID_HANDLE_VALUE) {
+    EC.hOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (EC.hOutput == INVALID_HANDLE_VALUE) {
         die("Could not get standard output handle.");
     }
+}
+void initEditor() { getWindowSize(); }
 
+int main() {
+    initStdHandles();
     enableRawMode();
-
+    initEditor();
     while (true) {
         editorRefreshScreen();
         editorProcessKeyPress();
