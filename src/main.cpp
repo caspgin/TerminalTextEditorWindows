@@ -12,13 +12,13 @@
 #include <winnt.h>
 
 #include <cstdlib>
+#include <format>
+#include <iomanip>
 #include <iostream>
-#include <memory>
 #include <string>
-
 /*** DEFINES ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
-
+#define KILO_VERSION 1.0
 /*** DATA ***/
 
 struct EditorConfig {
@@ -103,6 +103,15 @@ void editorDrawRows(std::string &outputBuffer) {
     int y;
     for (y = 0; y < EC.bHeight; y++) {
         abAppend(outputBuffer, "~");
+        if (y == EC.bHeight / 2) {
+            int midWidth = EC.bWidth / 2;
+            std::string welcome =
+                "TTE editor windows -- version " + std::to_string(KILO_VERSION);
+            int distance = midWidth - (welcome.size() / 2);
+            welcome = std::string(distance, ' ') + welcome;
+            abAppend(outputBuffer, welcome);
+        }
+
         abAppend(outputBuffer, "\x1b[K");
         if (y < EC.bHeight - 1) {
             abAppend(outputBuffer, "\r\n");
