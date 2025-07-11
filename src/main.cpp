@@ -47,7 +47,6 @@ void disableRawMode() {
 }
 
 void enableRawMode() {
-    // Turn off echo
     if (!GetConsoleMode(EC.hInput, &EC.ogInputMode) ||
         !GetConsoleMode(EC.hOutput, &EC.ogOutputMode)) {
         die("Could not get Console Mode");
@@ -87,7 +86,15 @@ void getWindowSize() {
     }
 
     EC.bWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-    EC.bHeight = csbi.srWindow.Top - csbi.srWindow.Bottom + 1;
+    EC.bHeight = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+}
+
+/*** APPEND BUFFER ***/
+
+std::string apBuf;
+
+void abAppend(std::string &apBuf, const std::string &appendData) {
+    apBuf += appendData;
 }
 
 /*** OUTPUT ***/
@@ -95,18 +102,26 @@ void getWindowSize() {
 void editorDrawRows(std::string &outputBuffer) {
     int y;
     for (y = 0; y < EC.bHeight; y++) {
-        outputBuffer += "~\r\n";
+        if (y < EC.bHeight - 1) {
+            outputBuffer += "~\r\n";
+        } else {
+            outputBuffer += "~";
+        }
     }
 }
 
 void editorRefreshScreen() {
     DWORD charactersWritten;
 
-    std::string outputBuffer = "\x1b[2J\x1b[H";
-    editorDrawRows(outputBuffer);
-    outputBuffer += "\x1b[H";
+    abAppend(apBuf, "\x1b[?25l");
+    abAppend(apBuf, "\x1b[2J");
+    abAppend(apBuf, "\x1b[H");
 
-    if (!WriteConsole(EC.hOutput, outputBuffer.data(), outputBuffer.size(),
+    editorDrawRows(apBuf);
+
+    abAppend(apBuf, "\x1b[H");
+    abAppend(apBuf, "\x1b[?25h");
+    if (!WriteConsole(EC.hOutput, apBuf.data(), apBuf.size(),
                       &charactersWritten, NULL)) {
         die("Write");
     }
