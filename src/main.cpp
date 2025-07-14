@@ -11,9 +11,8 @@
 #include <wincontypes.h>
 #include <winnt.h>
 
+#include <cstdio>
 #include <cstdlib>
-#include <format>
-#include <iomanip>
 #include <iostream>
 #include <string>
 /*** DEFINES ***/
@@ -28,6 +27,7 @@ struct EditorConfig {
     HANDLE hOutput;
     SHORT bWidth;
     SHORT bHeight;
+    DWORD cx, cy;
 };
 
 struct EditorConfig EC;
@@ -127,12 +127,16 @@ void editorRefreshScreen() {
 
     editorDrawRows(apBuf);
 
-    abAppend(apBuf, "\x1b[H");
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (int)EC.cy + 1,
+                  (int)EC.cx + 1);
+    abAppend(apBuf, buf);
     abAppend(apBuf, "\x1b[?25h");
     if (!WriteConsole(EC.hOutput, apBuf.data(), apBuf.size(),
                       &charactersWritten, NULL)) {
         die("Write");
     }
+    apBuf.clear();
 }
 
 /*** INPUT ***/
@@ -143,15 +147,41 @@ char editorReadKey() {
     while (!ReadFile(EC.hInput, &c, sizeof(c), &bytesRead, NULL)) {
         die("read");
     }
+
     return c;
+}
+void editorMoveCursor(char key) {
+    switch (key) {
+        case 'a':
+            EC.cx--;
+            break;
+        case 'd':
+            EC.cx++;
+
+            break;
+        case 'w':
+            EC.cy--;
+            break;
+        case 's':
+            EC.cy++;
+            break;
+    }
 }
 
 void editorProcessKeyPress() {
     char key = editorReadKey();
-
     switch (key) {
         case CTRL_KEY('q'):
             exitSucces();
+            break;
+        case '\x1b':
+            writeToBuffer(key);
+            break;
+        case 'w':
+        case 's':
+        case 'a':
+        case 'd':
+            editorMoveCursor(key);
             break;
     }
 }
@@ -167,7 +197,11 @@ void initStdHandles() {
         die("Could not get standard output handle.");
     }
 }
-void initEditor() { getWindowSize(); }
+void initEditor() {
+    EC.cx = 0;
+    EC.cy = 0;
+    getWindowSize();
+}
 
 int main() {
     initStdHandles();
