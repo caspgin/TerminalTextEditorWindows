@@ -30,6 +30,7 @@ struct EditorConfig {
     SHORT bWidth;
     SHORT bHeight;
     DWORD cx, cy;
+    std::vector<std::string> row;
     std::string debugMsg;
 };
 
@@ -105,6 +106,23 @@ void getWindowSize() {
     EC.bHeight = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 }
 
+/*** FILE I/O ***/
+
+void editorOpen(const std::string fileName) {
+    std::ifstream infile(fileName);
+    if (!infile.is_open()) {
+        die("File not opened");
+    }
+    std::string line;
+    while (std::getline(infile, line)) {
+        while (!line.empty() &&
+               (line[line.size() - 1] == '\r' || line[line.size() - 1] == '\n'))
+            line.pop_back();
+        EC.row.push_back(line);
+    }
+    infile.close();
+}
+
 /*** APPEND BUFFER ***/
 
 std::string apBuf;
@@ -120,18 +138,21 @@ void clearLine(std::string &outputBuffer) { abAppend(outputBuffer, "\x1b[K"); }
 void editorDrawRows(std::string &outputBuffer) {
     int y;
     for (y = 0; y < EC.bHeight; y++) {
-        if (y < EC.bHeight - 1) {
-            abAppend(outputBuffer, "~");
-        }
-        if (y == EC.bHeight / 2) {
-            int midWidth = EC.bWidth / 2;
-            std::string welcome =
-                "TTE editor windows -- version " + std::to_string(KILO_VERSION);
-            int distance = midWidth - (welcome.size() / 2);
-            welcome = std::string(distance, ' ') + welcome;
-            abAppend(outputBuffer, welcome);
-        }
-        if (y == EC.bHeight - 1) {
+        if (y < EC.row.size() && y != EC.bHeight - 1) {
+            abAppend(outputBuffer, EC.row[y]);
+        } else if (y >= EC.row.size()) {
+            if (y < EC.bHeight - 1) {
+                abAppend(outputBuffer, "~");
+            }
+            if (y == EC.bHeight / 2) {
+                int midWidth = EC.bWidth / 2;
+                std::string welcome = "TTE editor windows -- version " +
+                                      std::to_string(KILO_VERSION);
+                int distance = midWidth - (welcome.size() / 2);
+                welcome = std::string(distance, ' ') + welcome;
+                abAppend(outputBuffer, welcome);
+            }
+        } else if (y == EC.bHeight - 1) {
             outputBuffer += EC.debugMsg;
         }
         clearLine(outputBuffer);
@@ -309,14 +330,16 @@ void initStdHandles() {
 void initEditor() {
     EC.cx = 0;
     EC.cy = 0;
-    EC.debugMsg = "";
     getWindowSize();
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     initStdHandles();
     enableRawMode();
     initEditor();
+    if (argc >= 2) {
+        editorOpen(argv[1]);
+    }
     while (true) {
         editorRefreshScreen();
         editorProcessKeyPress();
