@@ -13,8 +13,10 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 /*** DEFINES ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define KILO_VERSION 1.0
@@ -39,6 +41,11 @@ enum editorKey {
     ARROW_RIGHT,
     ARROW_UP,
     ARROW_DOWN,
+    PAGE_UP,
+    PAGE_DOWN,
+    HOME,
+    END,
+    DEL_KEY,
 };
 
 /*** TERMINAL ***/
@@ -150,7 +157,6 @@ void editorRefreshScreen() {
                       &charactersWritten, NULL)) {
         die("Write");
     }
-    apBuf.clear();
 }
 
 /*** INPUT ***/
@@ -171,15 +177,51 @@ int editorReadKey() {
         }
 
         if (seq[0] == '[') {
+            if (seq[1] >= '0' && seq[1] <= '9') {
+                if (!ReadFile(EC.hInput, &seq[2], sizeof(seq[2]), &bytesRead,
+                              NULL)) {
+                    return ESCAPE;
+                }
+                if (seq[2] == '~') {
+                    switch (seq[1]) {
+                        case '1':
+                            return HOME;
+                        case '4':
+                            return END;
+                        case '3':
+                            return DEL_KEY;
+                        case '5':
+                            return PAGE_UP;
+                        case '6':
+                            return PAGE_DOWN;
+                        case '7':
+                            return HOME;
+                        case '8':
+                            return END;
+                    }
+                }
+            } else {
+                switch (seq[1]) {
+                    case 'A':
+                        return ARROW_UP;
+                    case 'B':
+                        return ARROW_DOWN;
+                    case 'C':
+                        return ARROW_RIGHT;
+                    case 'D':
+                        return ARROW_LEFT;
+                    case 'H':
+                        return HOME;
+                    case 'F':
+                        return END;
+                }
+            }
+        } else if (seq[0] == 'O') {
             switch (seq[1]) {
-                case 'A':
-                    return ARROW_UP;
-                case 'B':
-                    return ARROW_DOWN;
-                case 'C':
-                    return ARROW_RIGHT;
-                case 'D':
-                    return ARROW_LEFT;
+                case 'H':
+                    return HOME;
+                case 'F':
+                    return END;
             }
         }
         return ESCAPE;
@@ -208,6 +250,18 @@ void editorMoveCursor(int key) {
                 EC.cy++;
             }
             break;
+        case PAGE_UP:
+            EC.cy = 0;
+            break;
+        case PAGE_DOWN:
+            EC.cy = EC.bHeight - 1;
+            break;
+        case HOME:
+            EC.cx = 0;
+            break;
+        case END:
+            EC.cx = EC.bWidth - 1;
+            break;
     }
 }
 
@@ -221,7 +275,22 @@ void editorProcessKeyPress() {
         case ARROW_DOWN:
         case ARROW_RIGHT:
         case ARROW_LEFT:
+        case PAGE_UP:
+        case PAGE_DOWN:
+        case HOME:
+        case END:
             editorMoveCursor(key);
+            break;
+        case DEL_KEY:
+            if (!apBuf.empty()) {
+                apBuf.pop_back();
+            }
+            if (EC.cx != 0) {
+                EC.cx--;
+            } else {
+                EC.cy--;
+                EC.cx = EC.bWidth - 1;
+            }
             break;
     }
 }
