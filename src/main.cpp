@@ -29,6 +29,7 @@ struct EditorConfig {
     HANDLE hOutput;
     SHORT bWidth;
     SHORT bHeight;
+    SHORT rowoff;
     DWORD cx, cy;
     std::vector<std::string> row;
     std::string debugMsg;
@@ -137,13 +138,12 @@ void clearLine(std::string &outputBuffer) { abAppend(outputBuffer, "\x1b[K"); }
 
 void editorDrawRows(std::string &outputBuffer) {
     int y;
-    for (y = 0; y < EC.bHeight; y++) {
-        if (y < EC.row.size() && y != EC.bHeight - 1) {
-            abAppend(outputBuffer, EC.row[y]);
-        } else if (y >= EC.row.size()) {
-            if (y < EC.bHeight - 1) {
-                abAppend(outputBuffer, "~");
-            }
+    for (y = 0; y < EC.bHeight - 1; y++) {
+        int fileRow = y + EC.rowoff;
+        if (fileRow < EC.row.size()) {
+            abAppend(outputBuffer, EC.row[fileRow]);
+        } else if (EC.row.size() == 0) {
+            abAppend(outputBuffer, "~");
             if (y == EC.bHeight / 2) {
                 int midWidth = EC.bWidth / 2;
                 std::string welcome = "TTE editor windows -- version " +
@@ -152,17 +152,27 @@ void editorDrawRows(std::string &outputBuffer) {
                 welcome = std::string(distance, ' ') + welcome;
                 abAppend(outputBuffer, welcome);
             }
-        } else if (y == EC.bHeight - 1) {
-            outputBuffer += EC.debugMsg;
+        } else {
+            abAppend(outputBuffer, "~");
         }
         clearLine(outputBuffer);
-        if (y < EC.bHeight - 1) {
-            abAppend(outputBuffer, "\r\n");
-        }
+        abAppend(outputBuffer, "\r\n");
+    }
+    abAppend(outputBuffer, EC.debugMsg);
+}
+
+void editorScroll() {
+    if (EC.cy < EC.rowoff) {
+        EC.rowoff = EC.cy;
+    }
+
+    if (EC.cy >= EC.bHeight + EC.rowoff) {
+        EC.rowoff = EC.cy - EC.bHeight + 1;
     }
 }
 
 void editorRefreshScreen() {
+    editorScroll();
     DWORD charactersWritten;
 
     abAppend(apBuf, "\x1b[?25l");
@@ -170,7 +180,7 @@ void editorRefreshScreen() {
     editorDrawRows(apBuf);
 
     char buf[32];
-    std::snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (int)EC.cy + 1,
+    std::snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (int)(EC.cy - EC.rowoff) + 1,
                   (int)EC.cx + 1);
     abAppend(apBuf, buf);
     abAppend(apBuf, "\x1b[?25h");
@@ -178,6 +188,7 @@ void editorRefreshScreen() {
                       &charactersWritten, NULL)) {
         die("Write");
     }
+    apBuf.clear();
 }
 
 /*** INPUT ***/
@@ -267,7 +278,7 @@ void editorMoveCursor(int key) {
             }
             break;
         case ARROW_DOWN:
-            if (EC.cy != EC.bHeight - 1) {
+            if (EC.cy < EC.row.size()) {
                 EC.cy++;
             }
             break;
