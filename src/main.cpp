@@ -28,9 +28,18 @@ struct EditorConfig {
     SHORT bWidth;
     SHORT bHeight;
     DWORD cx, cy;
+    std::string debugMsg;
 };
 
 struct EditorConfig EC;
+
+enum editorKey {
+    ESCAPE = 27,
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN,
+};
 
 /*** TERMINAL ***/
 void die(LPCSTR lpMessage) {
@@ -99,10 +108,14 @@ void abAppend(std::string &apBuf, const std::string &appendData) {
 
 /*** OUTPUT ***/
 
+void clearLine(std::string &outputBuffer) { abAppend(outputBuffer, "\x1b[K"); }
+
 void editorDrawRows(std::string &outputBuffer) {
     int y;
     for (y = 0; y < EC.bHeight; y++) {
-        abAppend(outputBuffer, "~");
+        if (y < EC.bHeight - 1) {
+            abAppend(outputBuffer, "~");
+        }
         if (y == EC.bHeight / 2) {
             int midWidth = EC.bWidth / 2;
             std::string welcome =
@@ -111,8 +124,10 @@ void editorDrawRows(std::string &outputBuffer) {
             welcome = std::string(distance, ' ') + welcome;
             abAppend(outputBuffer, welcome);
         }
-
-        abAppend(outputBuffer, "\x1b[K");
+        if (y == EC.bHeight - 1) {
+            outputBuffer += EC.debugMsg;
+        }
+        clearLine(outputBuffer);
         if (y < EC.bHeight - 1) {
             abAppend(outputBuffer, "\r\n");
         }
@@ -124,7 +139,6 @@ void editorRefreshScreen() {
 
     abAppend(apBuf, "\x1b[?25l");
     abAppend(apBuf, "\x1b[H");
-
     editorDrawRows(apBuf);
 
     char buf[32];
@@ -141,46 +155,72 @@ void editorRefreshScreen() {
 
 /*** INPUT ***/
 
-char editorReadKey() {
+int editorReadKey() {
     char c;
     DWORD bytesRead;
     while (!ReadFile(EC.hInput, &c, sizeof(c), &bytesRead, NULL)) {
         die("read");
     }
+    if (c == '\x1b') {
+        char seq[3];
+        if (!ReadFile(EC.hInput, &seq[0], sizeof(seq[0]), &bytesRead, NULL)) {
+            return ESCAPE;
+        }
+        if (!ReadFile(EC.hInput, &seq[1], sizeof(seq[1]), &bytesRead, NULL)) {
+            return ESCAPE;
+        }
 
+        if (seq[0] == '[') {
+            switch (seq[1]) {
+                case 'A':
+                    return ARROW_UP;
+                case 'B':
+                    return ARROW_DOWN;
+                case 'C':
+                    return ARROW_RIGHT;
+                case 'D':
+                    return ARROW_LEFT;
+            }
+        }
+        return ESCAPE;
+    }
     return c;
 }
-void editorMoveCursor(char key) {
+void editorMoveCursor(int key) {
     switch (key) {
-        case 'a':
-            EC.cx--;
+        case ARROW_LEFT:
+            if (EC.cx != 0) {
+                EC.cx--;
+            }
             break;
-        case 'd':
-            EC.cx++;
-
+        case ARROW_RIGHT:
+            if (EC.cx != EC.bWidth - 1) {
+                EC.cx++;
+            }
             break;
-        case 'w':
-            EC.cy--;
+        case ARROW_UP:
+            if (EC.cy != 0) {
+                EC.cy--;
+            }
             break;
-        case 's':
-            EC.cy++;
+        case ARROW_DOWN:
+            if (EC.cy != EC.bHeight - 1) {
+                EC.cy++;
+            }
             break;
     }
 }
 
 void editorProcessKeyPress() {
-    char key = editorReadKey();
+    int key = editorReadKey();
     switch (key) {
         case CTRL_KEY('q'):
             exitSucces();
             break;
-        case '\x1b':
-            writeToBuffer(key);
-            break;
-        case 'w':
-        case 's':
-        case 'a':
-        case 'd':
+        case ARROW_UP:
+        case ARROW_DOWN:
+        case ARROW_RIGHT:
+        case ARROW_LEFT:
             editorMoveCursor(key);
             break;
     }
@@ -200,6 +240,7 @@ void initStdHandles() {
 void initEditor() {
     EC.cx = 0;
     EC.cy = 0;
+    EC.debugMsg = "";
     getWindowSize();
 }
 
