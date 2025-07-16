@@ -20,6 +20,7 @@
 /*** DEFINES ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define KILO_VERSION 1.0
+#define TAB_STOP 4
 /*** DATA ***/
 
 struct EditorConfig {
@@ -110,6 +111,25 @@ void getWindowSize() {
 DWORD getRowSize() {
     return (EC.cy >= EC.row.size()) ? 0 : (DWORD)EC.row[EC.cy].size();
 }
+/*** ROW OPERATIONS ***/
+
+#define GET_VALUE(itr) *itr
+
+void editorAppendRow(const std::string &newRow) {
+    std::string temp;
+    for (auto itr = newRow.begin(); itr != newRow.end(); itr++) {
+        if (GET_VALUE(itr) == '\t') {
+            temp += ' ';
+            while (temp.size() % TAB_STOP != 0) {
+                temp += ' ';
+            }
+        } else {
+            temp += GET_VALUE(itr);
+        }
+    }
+
+    EC.row.push_back(temp);
+}
 
 /*** FILE I/O ***/
 
@@ -123,7 +143,7 @@ void editorOpen(const std::string fileName) {
         while (!line.empty() &&
                (line[line.size() - 1] == '\r' || line[line.size() - 1] == '\n'))
             line.pop_back();
-        EC.row.push_back(line);
+        editorAppendRow(line);
     }
     infile.close();
 }
@@ -312,17 +332,25 @@ void editorMoveCursor(int key) {
                 EC.cy++;
             }
             break;
-        case PAGE_UP:
-            EC.cy = 0;
-            break;
-        case PAGE_DOWN:
-            EC.cy = EC.bHeight - 1;
-            break;
+        case PAGE_UP: {
+            int times = EC.bHeight;
+            for (; times > 0; times--) {
+                editorMoveCursor(ARROW_UP);
+            }
+        } break;
+        case PAGE_DOWN: {
+            int times = EC.bHeight;
+            for (; times > 0; times--) {
+                editorMoveCursor(ARROW_DOWN);
+            }
+        } break;
         case HOME:
             EC.cx = 0;
             break;
         case END:
-            EC.cx = EC.bWidth - 1;
+            if (EC.cy < EC.row.size()) {
+                EC.cx = EC.row[EC.cy].size();
+            }
             break;
     }
     rowSize = getRowSize();
