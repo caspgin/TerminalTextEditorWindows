@@ -29,8 +29,8 @@ struct EditorConfig {
     HANDLE hOutput;
     SHORT bWidth;
     SHORT bHeight;
-    SHORT rowoff;
-    SHORT coloff;
+    DWORD rowoff;
+    DWORD coloff;
     DWORD cx, cy;
     std::vector<std::string> row;
     std::string debugMsg;
@@ -91,8 +91,8 @@ void exitSucces() {
 
     std::string outputBuffer = "\x1b[2J\x1b[H";
 
-    if (!WriteConsole(EC.hOutput, outputBuffer.data(), outputBuffer.size(),
-                      &charactersWritten, NULL)) {
+    if (!WriteConsole(EC.hOutput, outputBuffer.data(),
+                      (DWORD)outputBuffer.size(), &charactersWritten, NULL)) {
         die("Write");
     }
     exit(0);
@@ -107,7 +107,9 @@ void getWindowSize() {
     EC.bWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
     EC.bHeight = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 }
-int getRowSize() { return (EC.cy >= EC.row.size()) ? 0 : EC.row[EC.cy].size(); }
+DWORD getRowSize() {
+    return (EC.cy >= EC.row.size()) ? 0 : (DWORD)EC.row[EC.cy].size();
+}
 
 /*** FILE I/O ***/
 
@@ -143,8 +145,8 @@ void editorDrawRows(std::string &outputBuffer) {
     for (y = 0; y < EC.bHeight - 1; y++) {
         int fileRow = y + EC.rowoff;
         if (fileRow < EC.row.size()) {
-            SHORT actualSize = EC.row[fileRow].size() - EC.coloff;
-            SHORT sizeToPrint = actualSize < EC.bWidth ? actualSize : EC.bWidth;
+            int actualSize = (int)(EC.row[fileRow].size() - EC.coloff);
+            int sizeToPrint = actualSize < EC.bWidth ? actualSize : EC.bWidth;
             if (sizeToPrint > 0) {
                 abAppend(outputBuffer,
                          EC.row[fileRow].substr(EC.coloff, sizeToPrint));
@@ -279,16 +281,25 @@ int editorReadKey() {
 }
 
 void editorMoveCursor(int key) {
-    int rowSize = getRowSize();
+    DWORD rowSize = getRowSize();
     switch (key) {
         case ARROW_LEFT:
             if (EC.cx != 0) {
                 EC.cx--;
+            } else {
+                editorMoveCursor(ARROW_UP);
+                rowSize = getRowSize();
+                if (rowSize > 0) {
+                    EC.cx = rowSize;
+                }
             }
             break;
         case ARROW_RIGHT:
-            if (EC.cx < rowSize - 1) {
+            if (EC.cx < (rowSize)) {
                 EC.cx++;
+            } else {
+                editorMoveCursor(ARROW_DOWN);
+                if (EC.cx != 0) EC.cx = 0;
             }
             break;
         case ARROW_UP:
@@ -316,7 +327,6 @@ void editorMoveCursor(int key) {
     }
     rowSize = getRowSize();
     if (EC.cx > rowSize) {
-        EC.debugMsg += std::to_string(rowSize);
         EC.cx = rowSize;
     }
 }
