@@ -31,7 +31,6 @@ struct EditorConfig {
     SHORT bHeight;
     SHORT rowoff;
     SHORT coloff;
-    INT mSize;
     DWORD cx, cy;
     std::vector<std::string> row;
     std::string debugMsg;
@@ -108,6 +107,7 @@ void getWindowSize() {
     EC.bWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
     EC.bHeight = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 }
+int getRowSize() { return (EC.cy >= EC.row.size()) ? 0 : EC.row[EC.cy].size(); }
 
 /*** FILE I/O ***/
 
@@ -121,9 +121,6 @@ void editorOpen(const std::string fileName) {
         while (!line.empty() &&
                (line[line.size() - 1] == '\r' || line[line.size() - 1] == '\n'))
             line.pop_back();
-        if (line.size() > EC.mSize) {
-            EC.mSize = line.size();
-        }
         EC.row.push_back(line);
     }
     infile.close();
@@ -197,9 +194,11 @@ void editorRefreshScreen() {
     abAppend(apBuf, "\x1b[H");
     editorDrawRows(apBuf);
 
+    int vcy = EC.cy - EC.rowoff + 1;
+    int vcx = EC.cx - EC.coloff + 1;
+
     char buf[32];
-    std::snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (int)(EC.cy - EC.rowoff) + 1,
-                  (int)(EC.cx - EC.coloff) + 1);
+    std::snprintf(buf, sizeof(buf), "\x1b[%d;%dH", vcy, vcx);
     abAppend(apBuf, buf);
     abAppend(apBuf, "\x1b[?25h");
     if (!WriteConsole(EC.hOutput, apBuf.data(), apBuf.size(),
@@ -278,7 +277,9 @@ int editorReadKey() {
     }
     return c;
 }
+
 void editorMoveCursor(int key) {
+    int rowSize = getRowSize();
     switch (key) {
         case ARROW_LEFT:
             if (EC.cx != 0) {
@@ -286,7 +287,7 @@ void editorMoveCursor(int key) {
             }
             break;
         case ARROW_RIGHT:
-            if (EC.cx < EC.mSize - 1) {
+            if (EC.cx < rowSize - 1) {
                 EC.cx++;
             }
             break;
@@ -312,6 +313,11 @@ void editorMoveCursor(int key) {
         case END:
             EC.cx = EC.bWidth - 1;
             break;
+    }
+    rowSize = getRowSize();
+    if (EC.cx > rowSize) {
+        EC.debugMsg += std::to_string(rowSize);
+        EC.cx = rowSize;
     }
 }
 
@@ -360,7 +366,6 @@ void initEditor() {
     EC.cx = 0;
     EC.cy = 0;
     EC.rowoff = EC.coloff = 0;
-    EC.mSize = 0;
     getWindowSize();
 }
 
