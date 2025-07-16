@@ -30,6 +30,8 @@ struct EditorConfig {
     SHORT bWidth;
     SHORT bHeight;
     SHORT rowoff;
+    SHORT coloff;
+    INT mSize;
     DWORD cx, cy;
     std::vector<std::string> row;
     std::string debugMsg;
@@ -119,6 +121,9 @@ void editorOpen(const std::string fileName) {
         while (!line.empty() &&
                (line[line.size() - 1] == '\r' || line[line.size() - 1] == '\n'))
             line.pop_back();
+        if (line.size() > EC.mSize) {
+            EC.mSize = line.size();
+        }
         EC.row.push_back(line);
     }
     infile.close();
@@ -141,7 +146,12 @@ void editorDrawRows(std::string &outputBuffer) {
     for (y = 0; y < EC.bHeight - 1; y++) {
         int fileRow = y + EC.rowoff;
         if (fileRow < EC.row.size()) {
-            abAppend(outputBuffer, EC.row[fileRow]);
+            SHORT actualSize = EC.row[fileRow].size() - EC.coloff;
+            SHORT sizeToPrint = actualSize < EC.bWidth ? actualSize : EC.bWidth;
+            if (sizeToPrint > 0) {
+                abAppend(outputBuffer,
+                         EC.row[fileRow].substr(EC.coloff, sizeToPrint));
+            }
         } else if (EC.row.size() == 0) {
             abAppend(outputBuffer, "~");
             if (y == EC.bHeight / 2) {
@@ -169,6 +179,14 @@ void editorScroll() {
     if (EC.cy >= EC.bHeight + EC.rowoff) {
         EC.rowoff = EC.cy - EC.bHeight + 1;
     }
+
+    if (EC.cx < EC.coloff) {
+        EC.coloff = EC.cx;
+    }
+
+    if (EC.cx >= EC.bWidth + EC.coloff) {
+        EC.coloff = EC.cx - EC.bWidth + 1;
+    }
 }
 
 void editorRefreshScreen() {
@@ -181,7 +199,7 @@ void editorRefreshScreen() {
 
     char buf[32];
     std::snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (int)(EC.cy - EC.rowoff) + 1,
-                  (int)EC.cx + 1);
+                  (int)(EC.cx - EC.coloff) + 1);
     abAppend(apBuf, buf);
     abAppend(apBuf, "\x1b[?25h");
     if (!WriteConsole(EC.hOutput, apBuf.data(), apBuf.size(),
@@ -268,7 +286,7 @@ void editorMoveCursor(int key) {
             }
             break;
         case ARROW_RIGHT:
-            if (EC.cx != EC.bWidth - 1) {
+            if (EC.cx < EC.mSize - 1) {
                 EC.cx++;
             }
             break;
@@ -341,6 +359,8 @@ void initStdHandles() {
 void initEditor() {
     EC.cx = 0;
     EC.cy = 0;
+    EC.rowoff = EC.coloff = 0;
+    EC.mSize = 0;
     getWindowSize();
 }
 
