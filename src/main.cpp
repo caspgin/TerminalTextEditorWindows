@@ -13,11 +13,12 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
 #include <vector>
+
 /*** DEFINES ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define KILO_VERSION 1.0
@@ -121,13 +122,12 @@ void editorAppendRow(const std::string &newRow) { EC.row.push_back(newRow); }
 
 /*** FILE I/O ***/
 
-void editorOpen(const std::string fileName) {
-    EC.fileName = fileName;
-    std::ifstream infile(fileName);
+void editorOpen(const std::string filePath) {
+    EC.fileName = std::filesystem::path(filePath).filename().string();
+    std::ifstream infile(filePath);
     if (!infile.is_open()) {
         die("File not opened");
     }
-
     std::string line;
     while (std::getline(infile, line)) {
         while (!line.empty() &&
@@ -178,22 +178,29 @@ void editorDrawRows(std::string &outputBuffer) {
 }
 
 void editorDrawStatusBar(std::string &outputBuffer) {
+    const DWORD MAX_FILENAME_SIZE = 20;
     EC.fileName = EC.fileName.empty() ? "[No Name]" : EC.fileName;
+    std::string initalSpacer = " ";
 
-    EC.fileName =
-        EC.fileName.size() > 20 ? EC.fileName.substr(0, 20) : EC.fileName;
+    std::string fileNamePart = EC.fileName.size() > MAX_FILENAME_SIZE
+                                   ? EC.fileName.substr(0, MAX_FILENAME_SIZE)
+                                   : EC.fileName;
 
-    std::string statusBar = EC.fileName;
+    int scrollPercent = ((EC.cy + 1) / (float)EC.row.size()) * 100;
 
-    statusBar += " - " + std::to_string(EC.row.size());
+    std::string fileLocationStatus = std::to_string(scrollPercent) + "%   " +
+                                     std::to_string(EC.cy + 1) + ":" +
+                                     std::to_string(EC.cx + 1) + " ";
 
-    int len = statusBar.size();
+    int len =
+        initalSpacer.size() + fileNamePart.size() + fileLocationStatus.size();
     while (len < EC.bWidth) {
-        statusBar += " ";
+        fileNamePart += " ";
         len++;
     }
-    statusBar = "\x1b[7m" + statusBar + "\x1b[m";
-    abAppend(outputBuffer, statusBar);
+
+    abAppend(outputBuffer, "\x1b[7m" + initalSpacer + fileNamePart +
+                               fileLocationStatus + "\x1b[m");
 }
 
 void editorScroll() {
