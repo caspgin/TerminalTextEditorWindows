@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 /*** DEFINES ***/
@@ -33,6 +34,7 @@ struct EditorConfig {
     DWORD rowoff;
     DWORD coloff;
     DWORD cx, cy;
+    std::string fileName;
     std::vector<std::string> row;
     std::string debugMsg;
 };
@@ -115,29 +117,17 @@ DWORD getRowSize() {
 
 #define GET_VALUE(itr) *itr
 
-void editorAppendRow(const std::string &newRow) {
-    std::string temp;
-    for (auto itr = newRow.begin(); itr != newRow.end(); itr++) {
-        if (GET_VALUE(itr) == '\t') {
-            temp += ' ';
-            while (temp.size() % TAB_STOP != 0) {
-                temp += ' ';
-            }
-        } else {
-            temp += GET_VALUE(itr);
-        }
-    }
-
-    EC.row.push_back(temp);
-}
+void editorAppendRow(const std::string &newRow) { EC.row.push_back(newRow); }
 
 /*** FILE I/O ***/
 
 void editorOpen(const std::string fileName) {
+    EC.fileName = fileName;
     std::ifstream infile(fileName);
     if (!infile.is_open()) {
         die("File not opened");
     }
+
     std::string line;
     while (std::getline(infile, line)) {
         while (!line.empty() &&
@@ -150,8 +140,6 @@ void editorOpen(const std::string fileName) {
 
 /*** APPEND BUFFER ***/
 
-std::string apBuf;
-
 void abAppend(std::string &apBuf, const std::string &appendData) {
     apBuf += appendData;
 }
@@ -162,7 +150,7 @@ void clearLine(std::string &outputBuffer) { abAppend(outputBuffer, "\x1b[K"); }
 
 void editorDrawRows(std::string &outputBuffer) {
     int y;
-    for (y = 0; y < EC.bHeight - 1; y++) {
+    for (y = 0; y < EC.bHeight; y++) {
         int fileRow = y + EC.rowoff;
         if (fileRow < EC.row.size()) {
             int actualSize = (int)(EC.row[fileRow].size() - EC.coloff);
@@ -187,7 +175,25 @@ void editorDrawRows(std::string &outputBuffer) {
         clearLine(outputBuffer);
         abAppend(outputBuffer, "\r\n");
     }
-    abAppend(outputBuffer, EC.debugMsg);
+}
+
+void editorDrawStatusBar(std::string &outputBuffer) {
+    EC.fileName = EC.fileName.empty() ? "[No Name]" : EC.fileName;
+
+    EC.fileName =
+        EC.fileName.size() > 20 ? EC.fileName.substr(0, 20) : EC.fileName;
+
+    std::string statusBar = EC.fileName;
+
+    statusBar += " - " + std::to_string(EC.row.size());
+
+    int len = statusBar.size();
+    while (len < EC.bWidth) {
+        statusBar += " ";
+        len++;
+    }
+    statusBar = "\x1b[7m" + statusBar + "\x1b[m";
+    abAppend(outputBuffer, statusBar);
 }
 
 void editorScroll() {
@@ -212,10 +218,11 @@ void editorRefreshScreen() {
     editorScroll();
     DWORD charactersWritten;
 
+    std::string apBuf;
     abAppend(apBuf, "\x1b[?25l");
     abAppend(apBuf, "\x1b[H");
     editorDrawRows(apBuf);
-
+    editorDrawStatusBar(apBuf);
     int vcy = EC.cy - EC.rowoff + 1;
     int vcx = EC.cx - EC.coloff + 1;
 
@@ -309,13 +316,11 @@ void editorMoveCursor(int key) {
             } else {
                 editorMoveCursor(ARROW_UP);
                 rowSize = getRowSize();
-                if (rowSize > 0) {
-                    EC.cx = rowSize;
-                }
+                EC.cx = rowSize > 0 ? rowSize - 1 : 0;
             }
             break;
         case ARROW_RIGHT:
-            if (EC.cx < (rowSize)) {
+            if (rowSize > 0 && EC.cx < rowSize - 1) {
                 EC.cx++;
             } else {
                 editorMoveCursor(ARROW_DOWN);
@@ -355,7 +360,7 @@ void editorMoveCursor(int key) {
     }
     rowSize = getRowSize();
     if (EC.cx > rowSize) {
-        EC.cx = rowSize;
+        EC.cx = rowSize > 0 ? rowSize - 1 : 0;
     }
 }
 
@@ -376,15 +381,7 @@ void editorProcessKeyPress() {
             editorMoveCursor(key);
             break;
         case DEL_KEY:
-            if (!apBuf.empty()) {
-                apBuf.pop_back();
-            }
-            if (EC.cx != 0) {
-                EC.cx--;
-            } else {
-                EC.cy--;
-                EC.cx = EC.bWidth - 1;
-            }
+            // TODO Implement Delete
             break;
     }
 }
@@ -404,7 +401,9 @@ void initEditor() {
     EC.cx = 0;
     EC.cy = 0;
     EC.rowoff = EC.coloff = 0;
+    EC.fileName = "";
     getWindowSize();
+    EC.bHeight -= 1;  // Setting last row for Status Bar
 }
 
 int main(int argc, char *argv[]) {
