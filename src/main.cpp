@@ -42,6 +42,7 @@ struct EditorConfig {
     DWORD coloff;
     DWORD cx, cy, rx;
     std::string fileName;
+    DWORD dirty;
     std::vector<std::string> row;
     std::vector<std::string> render;
     std::time_t statusmsg_time;
@@ -83,7 +84,6 @@ void enableRawMode() {
         die("Could not get Console Mode");
     }
     std::atexit(disableRawMode);
-
     DWORD rawInputMode = 0;
     rawInputMode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
     rawInputMode |= ENABLE_INSERT_MODE;
@@ -159,6 +159,7 @@ void editorUpdateRow(DWORD rowNumber) {
 void editorAppendRow(const std::string &newRow) {
     EC.row.push_back(newRow);
     editorUpdateRow(EC.row.size() - 1);
+    EC.dirty++;
 }
 
 void editorRowInsertChar(DWORD rowNumber, DWORD at, char c) {
@@ -169,6 +170,7 @@ void editorRowInsertChar(DWORD rowNumber, DWORD at, char c) {
     if (at > row.size()) at = row.size();
     row.insert(row.begin() + at, c);
     editorUpdateRow(rowNumber);
+    EC.dirty++;
 }
 
 void editorRowRemoveChar(DWORD rowNumber, DWORD at) {
@@ -179,6 +181,7 @@ void editorRowRemoveChar(DWORD rowNumber, DWORD at) {
     if (at >= row.size()) return;
     row.erase(row.begin() + at);
     editorUpdateRow(rowNumber);
+    EC.dirty++;
 }
 
 void editorInsertChar(char c) {
@@ -205,6 +208,7 @@ void editorOpen(const std::string filePath) {
         editorAppendRow(line);
     }
     infile.close();
+    EC.dirty = 0;
 }
 
 /*** APPEND BUFFER ***/
@@ -272,6 +276,7 @@ void editorDrawStatusBar(std::string &outputBuffer) {
     std::string fileNamePart = EC.fileName.size() > MAX_FILENAME_SIZE
                                    ? EC.fileName.substr(0, MAX_FILENAME_SIZE)
                                    : EC.fileName;
+    fileNamePart += EC.dirty > 0 ? " [+] " : "";
 
     int scrollPercent = ((EC.cy + 1) / (float)EC.row.size()) * 100;
 
@@ -530,6 +535,7 @@ void initEditor() {
     EC.cy = 0;
     EC.rowoff = EC.coloff = 0;
     EC.fileName = "";
+    EC.dirty = 0;
     EC.statusmsg_time = 0;
     getWindowSize();
     EC.bHeight -= 1;  // Setting second last row for Status Bar
