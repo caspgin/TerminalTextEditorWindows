@@ -51,6 +51,7 @@ struct EditorConfig EC;
 struct MessageHistory MH;
 enum editorKey {
     ESCAPE = 27,
+    BACKSPACE = 127,
     ARROW_LEFT = 1000,
     ARROW_RIGHT,
     ARROW_UP,
@@ -161,9 +162,22 @@ void editorAppendRow(const std::string &newRow) {
 }
 
 void editorRowInsertChar(DWORD rowNumber, DWORD at, char c) {
+    if (rowNumber >= EC.row.size()) {
+        return;
+    }
     std::string &row = EC.row[rowNumber];
     if (at > row.size()) at = row.size();
     row.insert(row.begin() + at, c);
+    editorUpdateRow(rowNumber);
+}
+
+void editorRowRemoveChar(DWORD rowNumber, DWORD at) {
+    if (rowNumber >= EC.row.size() && EC.row.size() == 0) {
+        return;
+    }
+    std::string &row = EC.row[rowNumber];
+    if (at >= row.size()) return;
+    row.erase(row.begin() + at);
     editorUpdateRow(rowNumber);
 }
 
@@ -477,8 +491,22 @@ void editorProcessKeyPress() {
         case END:
             editorMoveCursor(key);
             break;
+        case BACKSPACE:
+            if (EC.cx > 0) {
+                editorRowRemoveChar(EC.cy, EC.cx - 1);
+                EC.cx--;
+            } else if (EC.cx == 0 && EC.cy > 0) {
+                DWORD cursPos = EC.row[EC.cy - 1].size();
+                EC.row[EC.cy - 1] += EC.row[EC.cy];
+                EC.row.erase(EC.row.begin() + EC.cy);
+                EC.render.erase(EC.row.begin() + EC.cy);
+                EC.cy--;
+                EC.cx = cursPos;
+                editorUpdateRow(EC.cy);
+            }
+            break;
         case DEL_KEY:
-            // TODO Implement Delete
+            editorRowRemoveChar(EC.cy, EC.cx);
             break;
         default:
             editorInsertChar(key);
