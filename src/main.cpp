@@ -40,9 +40,10 @@ struct EditorConfig {
     SHORT bHeight;
     DWORD rowoff;
     DWORD coloff;
-    DWORD cx, cy;
+    DWORD cx, cy, rx;
     std::string fileName;
     std::vector<std::string> row;
+    std::vector<std::string> render;
     std::time_t statusmsg_time;
 };
 
@@ -122,9 +123,42 @@ DWORD getRowSize() {
 }
 /*** ROW OPERATIONS ***/
 
-#define GET_VALUE(itr) *itr
+DWORD editorRowCxToRx(int rowNumber, int cx) {
+    DWORD rx = 0;
+    std::string &row = EC.row[rowNumber];
 
-void editorAppendRow(const std::string &newRow) { EC.row.push_back(newRow); }
+    for (int j = 0; j < cx; j++) {
+        if (row[j] == '\t') rx += (TAB_STOP - 1) - (rx % TAB_STOP);
+        rx++;
+    }
+
+    return rx;
+}
+
+void editorUpdateRow(int rowNumber) {
+    while (rowNumber >= EC.render.size()) {
+        EC.render.push_back("");
+    }
+    std::string &row = EC.row[rowNumber];
+    std::string &renderRow = EC.render[rowNumber];
+    renderRow.clear();
+    for (auto itr = row.begin(); itr != row.end(); itr++) {
+        if (*itr == '\t') {
+            renderRow += ' ';
+            while (renderRow.size() % TAB_STOP != 0) {
+                renderRow += ' ';
+            }
+
+        } else {
+            renderRow += *itr;
+        }
+    }
+}
+
+void editorAppendRow(const std::string &newRow) {
+    EC.row.push_back(newRow);
+    editorUpdateRow(EC.row.size() - 1);
+}
 
 /*** FILE I/O ***/
 
@@ -176,12 +210,12 @@ void editorDrawRows(std::string &outputBuffer) {
     int y;
     for (y = 0; y < EC.bHeight; y++) {
         int fileRow = y + EC.rowoff;
-        if (fileRow < EC.row.size()) {
-            int actualSize = (int)(EC.row[fileRow].size() - EC.coloff);
+        if (fileRow < EC.render.size()) {
+            int actualSize = (int)(EC.render[fileRow].size() - EC.coloff);
             int sizeToPrint = actualSize < EC.bWidth ? actualSize : EC.bWidth;
             if (sizeToPrint > 0) {
                 abAppend(outputBuffer,
-                         EC.row[fileRow].substr(EC.coloff, sizeToPrint));
+                         EC.render[fileRow].substr(EC.coloff, sizeToPrint));
             }
         } else if (EC.row.size() == 0) {
             abAppend(outputBuffer, "~");
@@ -239,6 +273,11 @@ void editorDrawMessageBar(std::string &outputBuffer) {
 }
 
 void editorScroll() {
+    EC.rx = 0;
+    if (EC.cy < EC.row.size()) {
+        EC.rx = editorRowCxToRx(EC.cy, EC.cx);
+    }
+
     if (EC.cy < EC.rowoff) {
         EC.rowoff = EC.cy;
     }
@@ -247,12 +286,12 @@ void editorScroll() {
         EC.rowoff = EC.cy - EC.bHeight + 1;
     }
 
-    if (EC.cx < EC.coloff) {
-        EC.coloff = EC.cx;
+    if (EC.rx < EC.coloff) {
+        EC.coloff = EC.rx;
     }
 
-    if (EC.cx >= EC.bWidth + EC.coloff) {
-        EC.coloff = EC.cx - EC.bWidth + 1;
+    if (EC.rx >= EC.bWidth + EC.coloff) {
+        EC.coloff = EC.rx - EC.bWidth + 1;
     }
 }
 
@@ -267,7 +306,7 @@ void editorRefreshScreen() {
     editorDrawStatusBar(apBuf);
     editorDrawMessageBar(apBuf);
     int vcy = EC.cy - EC.rowoff + 1;
-    int vcx = EC.cx - EC.coloff + 1;
+    int vcx = EC.rx - EC.coloff + 1;
 
     char buf[32];
     std::snprintf(buf, sizeof(buf), "\x1b[%d;%dH", vcy, vcx);
