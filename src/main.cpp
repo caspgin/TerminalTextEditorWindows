@@ -123,7 +123,7 @@ DWORD getRowSize() {
 }
 /*** ROW OPERATIONS ***/
 
-DWORD editorRowCxToRx(int rowNumber, int cx) {
+DWORD editorRowCxToRx(DWORD rowNumber, DWORD cx) {
     DWORD rx = 0;
     std::string &row = EC.row[rowNumber];
 
@@ -135,7 +135,7 @@ DWORD editorRowCxToRx(int rowNumber, int cx) {
     return rx;
 }
 
-void editorUpdateRow(int rowNumber) {
+void editorUpdateRow(DWORD rowNumber) {
     while (rowNumber >= EC.render.size()) {
         EC.render.push_back("");
     }
@@ -158,6 +158,21 @@ void editorUpdateRow(int rowNumber) {
 void editorAppendRow(const std::string &newRow) {
     EC.row.push_back(newRow);
     editorUpdateRow(EC.row.size() - 1);
+}
+
+void editorRowInsertChar(DWORD rowNumber, DWORD at, char c) {
+    std::string &row = EC.row[rowNumber];
+    if (at > row.size()) at = row.size();
+    row.insert(row.begin() + at, c);
+    editorUpdateRow(rowNumber);
+}
+
+void editorInsertChar(char c) {
+    if (EC.cy == EC.row.size()) {
+        editorAppendRow("");
+    }
+    editorRowInsertChar(EC.cy, EC.cx, c);
+    EC.cx++;
 }
 
 /*** FILE I/O ***/
@@ -464,6 +479,9 @@ void editorProcessKeyPress() {
             break;
         case DEL_KEY:
             // TODO Implement Delete
+            break;
+        default:
+            editorInsertChar(key);
             break;
     }
 }
