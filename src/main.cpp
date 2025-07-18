@@ -11,8 +11,10 @@
 #include <wincontypes.h>
 #include <winnt.h>
 
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -24,6 +26,10 @@
 #define KILO_VERSION 1.0
 #define TAB_STOP 4
 /*** DATA ***/
+
+struct MessageHistory {
+    std::vector<std::string> messages;
+};
 
 struct EditorConfig {
     DWORD ogInputMode;
@@ -37,11 +43,11 @@ struct EditorConfig {
     DWORD cx, cy;
     std::string fileName;
     std::vector<std::string> row;
-    std::string debugMsg;
+    std::time_t statusmsg_time;
 };
 
 struct EditorConfig EC;
-
+struct MessageHistory MH;
 enum editorKey {
     ESCAPE = 27,
     ARROW_LEFT = 1000,
@@ -146,6 +152,24 @@ void abAppend(std::string &apBuf, const std::string &appendData) {
 
 /*** OUTPUT ***/
 
+void editorSetStatusMessage(const std::string fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int length = vsnprintf(NULL, 0, fmt.c_str(), args);
+    va_end(args);
+    if (length < 0) {
+        die("status Message length negative");
+    }
+    std::vector<char> buffer(length + 1);
+    va_list args2;
+    va_start(args2, fmt);
+    vsnprintf(buffer.data(), buffer.size(), fmt.c_str(), args2);
+    va_end(args2);
+
+    MH.messages.push_back(buffer.data());
+    EC.statusmsg_time = time(NULL);
+}
+
 void clearLine(std::string &outputBuffer) { abAppend(outputBuffer, "\x1b[K"); }
 
 void editorDrawRows(std::string &outputBuffer) {
@@ -200,7 +224,18 @@ void editorDrawStatusBar(std::string &outputBuffer) {
     }
 
     abAppend(outputBuffer, "\x1b[7m" + initalSpacer + fileNamePart +
-                               fileLocationStatus + "\x1b[m");
+                               fileLocationStatus + "\x1b[m" + "\r\n");
+}
+
+void editorDrawMessageBar(std::string &outputBuffer) {
+    clearLine(outputBuffer);
+    std::string lastMessage =
+        MH.messages.size() > 0 ? *(MH.messages.end() - 1) : "";
+    if (lastMessage.size() && time(NULL) - EC.statusmsg_time < 5) {
+        abAppend(outputBuffer, lastMessage.size() >= EC.bWidth - 1
+                                   ? " " + lastMessage.substr(0, EC.bWidth - 1)
+                                   : " " + lastMessage);
+    }
 }
 
 void editorScroll() {
@@ -230,6 +265,7 @@ void editorRefreshScreen() {
     abAppend(apBuf, "\x1b[H");
     editorDrawRows(apBuf);
     editorDrawStatusBar(apBuf);
+    editorDrawMessageBar(apBuf);
     int vcy = EC.cy - EC.rowoff + 1;
     int vcx = EC.cx - EC.coloff + 1;
 
@@ -409,8 +445,10 @@ void initEditor() {
     EC.cy = 0;
     EC.rowoff = EC.coloff = 0;
     EC.fileName = "";
+    EC.statusmsg_time = 0;
     getWindowSize();
-    EC.bHeight -= 1;  // Setting last row for Status Bar
+    EC.bHeight -= 1;  // Setting second last row for Status Bar
+    EC.bHeight -= 1;  // Setting last row for Message Bar
 }
 
 int main(int argc, char *argv[]) {
@@ -420,6 +458,7 @@ int main(int argc, char *argv[]) {
     if (argc >= 2) {
         editorOpen(argv[1]);
     }
+    editorSetStatusMessage("HELP: Ctrl-Q = quit");
     while (true) {
         editorRefreshScreen();
         editorProcessKeyPress();
