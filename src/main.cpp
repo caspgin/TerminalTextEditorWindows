@@ -51,6 +51,7 @@ struct EditorConfig {
 struct EditorConfig EC;
 struct MessageHistory MH;
 enum editorKey {
+    CARRIAGE = 13,
     ESCAPE = 27,
     BACKSPACE = 127,
     ARROW_LEFT = 1000,
@@ -128,7 +129,7 @@ DWORD editorRowCxToRx(DWORD rowNumber, DWORD cx) {
     DWORD rx = 0;
     std::string &row = EC.row[rowNumber];
 
-    for (int j = 0; j < cx; j++) {
+    for (DWORD j = 0; j < cx; j++) {
         if (row[j] == '\t') rx += (TAB_STOP - 1) - (rx % TAB_STOP);
         rx++;
     }
@@ -156,9 +157,12 @@ void editorUpdateRow(DWORD rowNumber) {
     }
 }
 
-void editorAppendRow(const std::string &newRow) {
-    EC.row.push_back(newRow);
-    editorUpdateRow(EC.row.size() - 1);
+void editorInsertRow(DWORD insertAt, const std::string &newRow) {
+    if (insertAt < 0 || insertAt > EC.row.size()) return;
+
+    EC.row.insert(EC.row.begin() + insertAt, newRow);
+    EC.render.insert(EC.render.begin() + insertAt, "");
+    editorUpdateRow(insertAt);
     EC.dirty++;
 }
 
@@ -167,7 +171,7 @@ void editorRowInsertChar(DWORD rowNumber, DWORD at, char c) {
         return;
     }
     std::string &row = EC.row[rowNumber];
-    if (at > row.size()) at = row.size();
+    if (at > row.size()) at = (DWORD)row.size();
     row.insert(row.begin() + at, c);
     editorUpdateRow(rowNumber);
     EC.dirty++;
@@ -183,7 +187,7 @@ void editorRowRemoveChar(DWORD rowNumber, DWORD at) {
 
 void editorInsertChar(char c) {
     if (EC.cy == EC.row.size()) {
-        editorAppendRow("");
+        editorInsertRow(EC.cy, "");
     }
     editorRowInsertChar(EC.cy, EC.cx, c);
     EC.cx++;
@@ -212,11 +216,23 @@ void editorRemoveChar() {
         editorRowRemoveChar(EC.cy, EC.cx - 1);
         EC.cx--;
     } else {
-        EC.cx = EC.row[EC.cy - 1].size();
+        EC.cx = (DWORD)EC.row[EC.cy - 1].size();
         editorRowAppendString(EC.cy - 1, EC.row[EC.cy]);
         editorRowDelete(EC.cy);
         EC.cy--;
     }
+}
+
+void editorInsertNewLine() {
+    if (EC.cx == 0) {
+        editorInsertRow(EC.cy, "");
+    } else {
+        editorInsertRow(EC.cy + 1, EC.row[EC.cy].substr(EC.cx));
+        editorInsertRow(EC.cy + 1, EC.row[EC.cy].substr(0, EC.cx));
+        editorRowDelete(EC.cy);
+    }
+    EC.cx = 0;
+    EC.cy++;
 }
 
 /*** FILE I/O ***/
@@ -232,7 +248,7 @@ void editorOpen(const std::string filePath) {
         while (!line.empty() &&
                (line[line.size() - 1] == '\r' || line[line.size() - 1] == '\n'))
             line.pop_back();
-        editorAppendRow(line);
+        editorInsertRow(EC.row.size(), line);
     }
     infile.close();
     EC.dirty = 0;
@@ -388,6 +404,11 @@ int editorReadKey() {
     while (!ReadFile(EC.hInput, &c, sizeof(c), &bytesRead, NULL)) {
         die("read");
     }
+
+    if (c == '\r') {
+        return CARRIAGE;
+    }
+
     if (c == '\x1b') {
         char seq[3];
         if (!ReadFile(EC.hInput, &seq[0], sizeof(seq[0]), &bytesRead, NULL)) {
@@ -497,7 +518,7 @@ void editorMoveCursor(int key) {
             break;
         case END:
             if (EC.cy < EC.row.size()) {
-                EC.cx = EC.row[EC.cy].size();
+                EC.cx = (DWORD)EC.row[EC.cy].size();
             }
             break;
     }
@@ -529,6 +550,9 @@ void editorProcessKeyPress() {
         case DEL_KEY:
             editorMoveCursor(ARROW_RIGHT);
             editorRemoveChar();
+            break;
+        case CARRIAGE:
+            editorInsertNewLine();
             break;
         default:
             editorInsertChar(key);
