@@ -174,9 +174,6 @@ void editorRowInsertChar(DWORD rowNumber, DWORD at, char c) {
 }
 
 void editorRowRemoveChar(DWORD rowNumber, DWORD at) {
-    if (rowNumber >= EC.row.size() && EC.row.size() == 0) {
-        return;
-    }
     std::string &row = EC.row[rowNumber];
     if (at >= row.size()) return;
     row.erase(row.begin() + at);
@@ -190,6 +187,36 @@ void editorInsertChar(char c) {
     }
     editorRowInsertChar(EC.cy, EC.cx, c);
     EC.cx++;
+}
+
+void editorRowAppendString(DWORD targetRowToAppend,
+                           std::string &stringToAppend) {
+    EC.row[targetRowToAppend] += stringToAppend;
+    editorUpdateRow(targetRowToAppend);
+    EC.dirty++;
+}
+
+void editorRowDelete(DWORD rowToDel) {
+    if (rowToDel >= EC.row.size() || rowToDel >= EC.render.size()) return;
+
+    EC.row.erase(EC.row.begin() + rowToDel);
+    EC.render.erase(EC.render.begin() + rowToDel);
+
+    EC.dirty++;
+}
+
+void editorRemoveChar() {
+    if (EC.cy == EC.row.size() || EC.row.size() == 0) return;
+    if (EC.cx == 0 && EC.cy == 0) return;
+    if (EC.cx > 0) {
+        editorRowRemoveChar(EC.cy, EC.cx - 1);
+        EC.cx--;
+    } else {
+        EC.cx = EC.row[EC.cy - 1].size();
+        editorRowAppendString(EC.cy - 1, EC.row[EC.cy]);
+        editorRowDelete(EC.cy);
+        EC.cy--;
+    }
 }
 
 /*** FILE I/O ***/
@@ -497,21 +524,11 @@ void editorProcessKeyPress() {
             editorMoveCursor(key);
             break;
         case BACKSPACE:
-            if (EC.cx > 0) {
-                editorRowRemoveChar(EC.cy, EC.cx - 1);
-                EC.cx--;
-            } else if (EC.cx == 0 && EC.cy > 0) {
-                DWORD cursPos = EC.row[EC.cy - 1].size();
-                EC.row[EC.cy - 1] += EC.row[EC.cy];
-                EC.row.erase(EC.row.begin() + EC.cy);
-                EC.render.erase(EC.row.begin() + EC.cy);
-                EC.cy--;
-                EC.cx = cursPos;
-                editorUpdateRow(EC.cy);
-            }
+            editorRemoveChar();
             break;
         case DEL_KEY:
-            editorRowRemoveChar(EC.cy, EC.cx);
+            editorMoveCursor(ARROW_RIGHT);
+            editorRemoveChar();
             break;
         default:
             editorInsertChar(key);
