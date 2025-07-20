@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -25,6 +26,12 @@
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define KILO_VERSION 1.0
 #define TAB_STOP 4
+
+/*** FUNCTION DECLARATION ***/
+
+void editorSetStatusMessage(const std::string fmt, ...);
+std::string editorPrompt(std::string prompt);
+
 /*** DATA ***/
 
 struct MessageHistory {
@@ -41,7 +48,7 @@ struct EditorConfig {
     DWORD rowoff;
     DWORD coloff;
     DWORD cx, cy, rx;
-    std::string fileName;
+    std::filesystem::path filePath;
     DWORD dirty;
     std::vector<std::string> row;
     std::vector<std::string> render;
@@ -238,8 +245,8 @@ void editorInsertNewLine() {
 /*** FILE I/O ***/
 
 void editorOpen(const std::string filePath) {
-    EC.fileName = std::filesystem::path(filePath).filename().string();
-    std::ifstream infile(filePath);
+    EC.filePath = std::filesystem::absolute(std::filesystem::path(filePath));
+    std::ifstream infile(EC.filePath);
     if (!infile.is_open()) {
         die("File not opened");
     }
@@ -252,6 +259,37 @@ void editorOpen(const std::string filePath) {
     }
     infile.close();
     EC.dirty = 0;
+}
+
+void editorRowsToString(std::string &data) {
+    for (auto itr = EC.row.begin(); itr != EC.row.end(); itr++) {
+        data += *itr;
+        data += "\r\n";
+    }
+}
+
+void editorSave() {
+    if (EC.filePath.empty()) {
+        EC.filePath = editorPrompt("Save as: %s");
+        if (EC.filePath.empty()) {
+            editorSetStatusMessage("Save aborted");
+            return;
+        }
+    }
+
+    std::string data;
+    editorRowsToString(data);
+
+    std::ofstream outfile(EC.filePath);
+    if (!outfile.is_open()) {
+        editorSetStatusMessage("File NOT saved. File would not open.");
+    }
+
+    outfile << data;
+    outfile.close();
+    EC.dirty = 0;
+    editorSetStatusMessage("Wrote %d bytes to %s.", data.size(),
+                           EC.filePath.filename().string().c_str());
 }
 
 /*** APPEND BUFFER ***/
@@ -313,13 +351,14 @@ void editorDrawRows(std::string &outputBuffer) {
 
 void editorDrawStatusBar(std::string &outputBuffer) {
     const DWORD MAX_FILENAME_SIZE = 20;
-    EC.fileName = EC.fileName.empty() ? "[No Name]" : EC.fileName;
+    std::string fileName =
+        EC.filePath.empty() ? "[No Name]" : EC.filePath.filename().string();
     std::string initalSpacer = " ";
 
-    std::string fileNamePart = EC.fileName.size() > MAX_FILENAME_SIZE
-                                   ? EC.fileName.substr(0, MAX_FILENAME_SIZE)
-                                   : EC.fileName;
-    fileNamePart += EC.dirty > 0 ? " [+] " : "";
+    fileName = fileName.size() > MAX_FILENAME_SIZE
+                   ? fileName.substr(0, MAX_FILENAME_SIZE)
+                   : fileName;
+    fileName += EC.dirty > 0 ? " [+] " : "";
 
     int scrollPercent = ((EC.cy + 1) / (float)EC.row.size()) * 100;
 
@@ -327,14 +366,13 @@ void editorDrawStatusBar(std::string &outputBuffer) {
                                      std::to_string(EC.cy + 1) + ":" +
                                      std::to_string(EC.cx + 1) + " ";
 
-    int len =
-        initalSpacer.size() + fileNamePart.size() + fileLocationStatus.size();
+    int len = initalSpacer.size() + fileName.size() + fileLocationStatus.size();
     while (len < EC.bWidth) {
-        fileNamePart += " ";
+        fileName += " ";
         len++;
     }
 
-    abAppend(outputBuffer, "\x1b[7m" + initalSpacer + fileNamePart +
+    abAppend(outputBuffer, "\x1b[7m" + initalSpacer + fileName +
                                fileLocationStatus + "\x1b[m" + "\r\n");
 }
 
@@ -397,7 +435,6 @@ void editorRefreshScreen() {
 }
 
 /*** INPUT ***/
-
 int editorReadKey() {
     char c;
     DWORD bytesRead;
@@ -528,11 +565,37 @@ void editorMoveCursor(int key) {
     }
 }
 
+std::string editorPrompt(std::string prompt) {
+    std::string fileName;
+    while (1) {
+        editorSetStatusMessage(prompt, fileName.c_str());
+        editorRefreshScreen();
+
+        int key = editorReadKey();
+        if (key == DEL_KEY || key == BACKSPACE) {
+            fileName.pop_back();
+        } else if (key == '\x1b') {
+            editorSetStatusMessage("");
+            return "";
+        } else if (key == '\r') {
+            if (fileName.size() != 0) {
+                editorSetStatusMessage("");
+                return fileName;
+            }
+        } else if (!iscntrl(key) && key < 128) {
+            fileName += (char)key;
+        }
+    }
+}
+
 void editorProcessKeyPress() {
     int key = editorReadKey();
     switch (key) {
         case CTRL_KEY('q'):
             exitSucces();
+            break;
+        case CTRL_KEY('s'):
+            editorSave();
             break;
         case ARROW_UP:
         case ARROW_DOWN:
@@ -575,7 +638,6 @@ void initEditor() {
     EC.cx = 0;
     EC.cy = 0;
     EC.rowoff = EC.coloff = 0;
-    EC.fileName = "";
     EC.dirty = 0;
     EC.statusmsg_time = 0;
     getWindowSize();
