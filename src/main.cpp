@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "llm_api_client.h"
 /*** DEFINES ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define KILO_VERSION 1.0
@@ -565,26 +566,56 @@ void editorMoveCursor(int key) {
     }
 }
 
-std::string editorPrompt(std::string prompt) {
-    std::string fileName;
+std::string editorPrompt(std::string promptLabel) {
+    std::string prompt = "";
     while (1) {
-        editorSetStatusMessage(prompt, fileName.c_str());
+        editorSetStatusMessage(promptLabel, prompt.c_str());
         editorRefreshScreen();
 
         int key = editorReadKey();
         if (key == DEL_KEY || key == BACKSPACE) {
-            fileName.pop_back();
+            prompt.pop_back();
         } else if (key == '\x1b') {
             editorSetStatusMessage("");
             return "";
         } else if (key == '\r') {
-            if (fileName.size() != 0) {
+            if (prompt.size() != 0) {
                 editorSetStatusMessage("");
-                return fileName;
+                return prompt;
             }
         } else if (!iscntrl(key) && key < 128) {
-            fileName += (char)key;
+            prompt += (char)key;
         }
+    }
+}
+
+void editorAi() {
+    std::string prompt = editorPrompt("Enter Prompt: %s");
+
+    if (prompt.empty()) {
+        editorSetStatusMessage("Text generation aborted.");
+        return;
+    }
+
+    try {
+        std::string response = CallGemini(prompt);
+        std::string line = "";
+        for (auto itr = response.begin(); itr != response.end(); itr++) {
+            if (*itr == '\n' || *itr == '\r') {
+                editorInsertRow(EC.row.size(), line);
+                line = "";
+                continue;
+            }
+            line += *itr;
+        }
+        EC.dirty++;
+    } catch (const CustomError &e) {
+        editorSetStatusMessage("Error: %s , Message: %s", e.errorType.c_str(),
+                               e.what());
+        return;
+    } catch (const std::exception &e) {
+        editorSetStatusMessage("Exception: %s", e.what());
+        return;
     }
 }
 
@@ -596,6 +627,9 @@ void editorProcessKeyPress() {
             break;
         case CTRL_KEY('s'):
             editorSave();
+            break;
+        case CTRL_KEY('a'):
+            editorAi();
             break;
         case ARROW_UP:
         case ARROW_DOWN:
@@ -652,7 +686,9 @@ int main(int argc, char *argv[]) {
     if (argc >= 2) {
         editorOpen(argv[1]);
     }
-    editorSetStatusMessage("HELP: Ctrl-Q = quit");
+    editorSetStatusMessage(
+        "HELP: Ctrl-Q = quit | Ctrl-A = Ai text generation | Ctrl-S = "
+        "Save/Save as");
     while (true) {
         editorRefreshScreen();
         editorProcessKeyPress();
