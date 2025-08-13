@@ -17,8 +17,11 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <ios>
 #include <iostream>
 #include <ostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -27,7 +30,7 @@
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define KILO_VERSION 1.0
 #define TAB_STOP 4
-
+#define SIDE_PANEL_WIDTH 5
 /*** FUNCTION DECLARATION ***/
 
 void editorSetStatusMessage(const std::string fmt, ...);
@@ -44,8 +47,8 @@ struct EditorConfig {
     DWORD ogOutputMode;
     HANDLE hInput;
     HANDLE hOutput;
-    SHORT bWidth;
-    SHORT bHeight;
+    SHORT screenWidth;
+    SHORT screenHeight;
     DWORD rowoff;
     DWORD coloff;
     DWORD cx, cy, rx;
@@ -125,8 +128,8 @@ void getWindowSize() {
         die("Screen Buffer Info not available");
     }
 
-    EC.bWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-    EC.bHeight = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    EC.screenWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+    EC.screenHeight = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 }
 DWORD getRowSize() {
     return (EC.cy >= EC.row.size()) ? 0 : (DWORD)EC.row[EC.cy].size();
@@ -321,21 +324,35 @@ void editorSetStatusMessage(const std::string fmt, ...) {
 
 void clearLine(std::string &outputBuffer) { abAppend(outputBuffer, "\x1b[K"); }
 
+void editorDrawSidePanel(std::string &outputBuffer, const int lineNumber) {
+    std::stringstream ss;
+
+    ss << std::setw(SIDE_PANEL_WIDTH - 1) << std::right << std::setfill(' ')
+       << lineNumber;
+    abAppend(outputBuffer, "\x1b[48;2;31;40m");
+    abAppend(outputBuffer, ss.str() + ' ');
+    abAppend(outputBuffer, "\x1b[0m");
+}
 void editorDrawRows(std::string &outputBuffer) {
     int y;
-    for (y = 0; y < EC.bHeight; y++) {
+    for (y = 0; y < EC.screenHeight; y++) {
         int fileRow = y + EC.rowoff;
+        if (EC.render.size() == 0 && fileRow == 0) {
+            editorDrawSidePanel(outputBuffer, 1);
+        }
         if (fileRow < EC.render.size()) {
+            editorDrawSidePanel(outputBuffer, fileRow + 1);
             int actualSize = (int)(EC.render[fileRow].size() - EC.coloff);
-            int sizeToPrint = actualSize < EC.bWidth ? actualSize : EC.bWidth;
+            int sizeToPrint =
+                actualSize < EC.screenWidth ? actualSize : EC.screenWidth;
             if (sizeToPrint > 0) {
                 abAppend(outputBuffer,
                          EC.render[fileRow].substr(EC.coloff, sizeToPrint));
             }
-        } else if (EC.row.size() == 0) {
+        } else if (EC.row.size() == 0 && fileRow != 0) {
             abAppend(outputBuffer, "~");
-            if (y == EC.bHeight / 2) {
-                int midWidth = EC.bWidth / 2;
+            if (y == EC.screenHeight / 2) {
+                int midWidth = EC.screenWidth / 2;
                 std::string welcome = "TTE editor windows -- version " +
                                       std::to_string(KILO_VERSION);
                 int distance = midWidth - (welcome.size() / 2);
@@ -343,7 +360,9 @@ void editorDrawRows(std::string &outputBuffer) {
                 abAppend(outputBuffer, welcome);
             }
         } else {
-            abAppend(outputBuffer, "~");
+            if (fileRow != 0) {
+                abAppend(outputBuffer, "~");
+            }
         }
         clearLine(outputBuffer);
         abAppend(outputBuffer, "\r\n");
@@ -368,7 +387,7 @@ void editorDrawStatusBar(std::string &outputBuffer) {
                                      std::to_string(EC.cx + 1) + " ";
 
     int len = initalSpacer.size() + fileName.size() + fileLocationStatus.size();
-    while (len < EC.bWidth) {
+    while (len < EC.screenWidth) {
         fileName += " ";
         len++;
     }
@@ -382,9 +401,10 @@ void editorDrawMessageBar(std::string &outputBuffer) {
     std::string lastMessage =
         MH.messages.size() > 0 ? *(MH.messages.end() - 1) : "";
     if (lastMessage.size() && time(NULL) - EC.statusmsg_time < 5) {
-        abAppend(outputBuffer, lastMessage.size() >= EC.bWidth - 1
-                                   ? " " + lastMessage.substr(0, EC.bWidth - 1)
-                                   : " " + lastMessage);
+        abAppend(outputBuffer,
+                 lastMessage.size() >= EC.screenWidth - 1
+                     ? " " + lastMessage.substr(0, EC.screenWidth - 1)
+                     : " " + lastMessage);
     }
 }
 
@@ -398,16 +418,16 @@ void editorScroll() {
         EC.rowoff = EC.cy;
     }
 
-    if (EC.cy >= EC.bHeight + EC.rowoff) {
-        EC.rowoff = EC.cy - EC.bHeight + 1;
+    if (EC.cy >= EC.screenHeight + EC.rowoff) {
+        EC.rowoff = EC.cy - EC.screenHeight + 1;
     }
 
     if (EC.rx < EC.coloff) {
         EC.coloff = EC.rx;
     }
 
-    if (EC.rx >= EC.bWidth + EC.coloff) {
-        EC.coloff = EC.rx - EC.bWidth + 1;
+    if (EC.rx >= EC.screenWidth + EC.coloff) {
+        EC.coloff = EC.rx - EC.screenWidth + 1;
     }
 }
 
@@ -422,7 +442,7 @@ void editorRefreshScreen() {
     editorDrawStatusBar(apBuf);
     editorDrawMessageBar(apBuf);
     int vcy = EC.cy - EC.rowoff + 1;
-    int vcx = EC.rx - EC.coloff + 1;
+    int vcx = EC.rx - EC.coloff + 1 + SIDE_PANEL_WIDTH;
 
     char buf[32];
     std::snprintf(buf, sizeof(buf), "\x1b[%d;%dH", vcy, vcx);
@@ -540,13 +560,13 @@ void editorMoveCursor(int key) {
             }
             break;
         case PAGE_UP: {
-            int times = EC.bHeight;
+            int times = EC.screenHeight;
             for (; times > 0; times--) {
                 editorMoveCursor(ARROW_UP);
             }
         } break;
         case PAGE_DOWN: {
-            int times = EC.bHeight;
+            int times = EC.screenHeight;
             for (; times > 0; times--) {
                 editorMoveCursor(ARROW_DOWN);
             }
@@ -675,8 +695,9 @@ void initEditor() {
     EC.dirty = 0;
     EC.statusmsg_time = 0;
     getWindowSize();
-    EC.bHeight -= 1;  // Setting second last row for Status Bar
-    EC.bHeight -= 1;  // Setting last row for Message Bar
+    EC.screenHeight -= 1;  // Setting second last row for Status Bar
+    EC.screenHeight -= 1;  // Setting last row for Message Bar
+    EC.screenWidth -= SIDE_PANEL_WIDTH;
 }
 
 int main(int argc, char *argv[]) {
