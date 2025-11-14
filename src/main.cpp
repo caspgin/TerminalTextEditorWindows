@@ -594,7 +594,9 @@ std::string editorPrompt(std::string promptLabel) {
 
         int key = editorReadKey();
         if (key == DEL_KEY || key == BACKSPACE) {
-            prompt.pop_back();
+            if (!prompt.empty()) {
+                prompt.pop_back();
+            }
         } else if (key == '\x1b') {
             editorSetStatusMessage("");
             return "";
