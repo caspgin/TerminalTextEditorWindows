@@ -25,6 +25,7 @@
 #include <string>
 #include <vector>
 
+#include "error/LLMError.h"
 #include "llm_api_client.h"
 /*** DEFINES ***/
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -631,8 +632,8 @@ void editorAi() {
             line += *itr;
         }
         EC.dirty++;
-    } catch (const CustomError &e) {
-        editorSetStatusMessage("Error: %s , Message: %s", e.errorType.c_str(),
+    } catch (const LLMError &e) {
+        editorSetStatusMessage("Error: %s , Message: %s", e.getErrorType(),
                                e.what());
         return;
     } catch (const std::exception &e) {
