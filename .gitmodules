@@ -1,3 +1,0 @@
-[submodule "extern/llmLib"]
-	path = extern/llmLib
-	url = https://github.com/caspgin/llmLib.git
