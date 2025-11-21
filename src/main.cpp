@@ -7,6 +7,7 @@
 #include <errhandlingapi.h>
 #include <handleapi.h>
 #include <minwindef.h>
+#include <synchapi.h>
 #include <winbase.h>
 #include <wincontypes.h>
 #include <winnt.h>
@@ -63,6 +64,8 @@ struct EditorConfig {
 struct EditorConfig EC;
 struct MessageHistory MH;
 enum editorKey {
+    UNKNOWN_KEY = -2,
+    NO_KEY = -1,
     CARRIAGE = 13,
     ESCAPE = 27,
     BACKSPACE = 127,
@@ -458,30 +461,48 @@ void editorRefreshScreen() {
 
 /*** INPUT ***/
 int editorReadKey() {
-    char c;
+    char characterRead;
     DWORD bytesRead;
-    while (!ReadFile(EC.hInput, &c, sizeof(c), &bytesRead, NULL)) {
-        die("read");
+
+    if (WaitForSingleObject(EC.hInput, 0) != WAIT_OBJECT_0) {
+        return NO_KEY;
     }
 
-    if (c == '\r') {
+    if (!ReadFile(EC.hInput, &characterRead, sizeof(characterRead), &bytesRead,
+                  NULL)) {
+        editorSetStatusMessage("Error in Reading.");
+        return NO_KEY;
+    }
+
+    if (characterRead == '\r') {
         return CARRIAGE;
     }
 
-    if (c == '\x1b') {
+    if (characterRead == '\x1b') {
         char seq[3];
-        if (!ReadFile(EC.hInput, &seq[0], sizeof(seq[0]), &bytesRead, NULL)) {
+        if (WaitForSingleObject(EC.hInput, 0) != WAIT_OBJECT_0) {
             return ESCAPE;
         }
+        if (!ReadFile(EC.hInput, &seq[0], sizeof(seq[0]), &bytesRead, NULL)) {
+            editorSetStatusMessage("Error in Reading");
+            return NO_KEY;
+        }
+        if (WaitForSingleObject(EC.hInput, 0) != WAIT_OBJECT_0) {
+            return UNKNOWN_KEY;
+        }
         if (!ReadFile(EC.hInput, &seq[1], sizeof(seq[1]), &bytesRead, NULL)) {
-            return ESCAPE;
+            editorSetStatusMessage("Error in Reading");
+            return UNKNOWN_KEY;
         }
 
         if (seq[0] == '[') {
             if (seq[1] >= '0' && seq[1] <= '9') {
+                if (WaitForSingleObject(EC.hInput, 0) != WAIT_OBJECT_0) {
+                    return UNKNOWN_KEY;
+                }
                 if (!ReadFile(EC.hInput, &seq[2], sizeof(seq[2]), &bytesRead,
                               NULL)) {
-                    return ESCAPE;
+                    return UNKNOWN_KEY;
                 }
                 if (seq[2] == '~') {
                     switch (seq[1]) {
@@ -527,7 +548,7 @@ int editorReadKey() {
         }
         return ESCAPE;
     }
-    return c;
+    return characterRead;
 }
 
 void editorMoveCursor(int key) {
@@ -539,7 +560,7 @@ void editorMoveCursor(int key) {
             } else {
                 editorMoveCursor(ARROW_UP);
                 rowSize = getRowSize();
-                EC.cx = rowSize > 0 ? rowSize - 1 : 0;
+                EC.cx = rowSize > 0 ? rowSize : 0;
             }
             break;
         case ARROW_RIGHT:
@@ -583,7 +604,7 @@ void editorMoveCursor(int key) {
     }
     rowSize = getRowSize();
     if (EC.cx > rowSize) {
-        EC.cx = rowSize > 0 ? rowSize - 1 : 0;
+        EC.cx = rowSize > 0 ? rowSize : 0;
     }
 }
 
@@ -645,6 +666,8 @@ void editorAi() {
 void editorProcessKeyPress() {
     int key = editorReadKey();
     switch (key) {
+        case NO_KEY:
+            break;
         case CTRL_KEY('q'):
             exitSucces();
             break;
@@ -673,6 +696,10 @@ void editorProcessKeyPress() {
             break;
         case CARRIAGE:
             editorInsertNewLine();
+            break;
+        case UNKNOWN_KEY:
+            break;
+        case ESCAPE:
             break;
         default:
             editorInsertChar(key);
