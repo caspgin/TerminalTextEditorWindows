@@ -24,6 +24,7 @@
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "error/LLMError.h"
@@ -59,6 +60,7 @@ struct EditorConfig {
     std::vector<std::string> row;
     std::vector<std::string> render;
     std::time_t statusmsg_time;
+    LlmClient aiClient;
 };
 
 struct EditorConfig EC;
@@ -435,12 +437,12 @@ void editorScroll() {
     }
 }
 
-void editorRefreshScreen() {
+void editorRefreshScreen(int overrideCursorX = -1, int overrideCursorY = -1) {
     editorScroll();
     DWORD charactersWritten;
 
     std::string apBuf;
-    abAppend(apBuf, "\x1b[?25l");
+    abAppend(apBuf, "\x1b[?25l");  // Turn cursor off
     abAppend(apBuf, "\x1b[H");
     editorDrawRows(apBuf);
     editorDrawStatusBar(apBuf);
@@ -448,10 +450,15 @@ void editorRefreshScreen() {
     int vcy = EC.cy - EC.rowoff + 1;
     int vcx = EC.rx - EC.coloff + 1 + SIDE_PANEL_WIDTH;
 
+    if (overrideCursorY != -1) {
+        vcy = overrideCursorY;
+        vcx = overrideCursorX;
+    }
+
     char buf[32];
     std::snprintf(buf, sizeof(buf), "\x1b[%d;%dH", vcy, vcx);
     abAppend(apBuf, buf);
-    abAppend(apBuf, "\x1b[?25h");
+    abAppend(apBuf, "\x1b[?25h");  // Turn cursor On
     if (!WriteConsole(EC.hOutput, apBuf.data(), apBuf.size(),
                       &charactersWritten, NULL)) {
         die("Write");
@@ -612,10 +619,14 @@ std::string editorPrompt(std::string promptLabel) {
     std::string prompt = "";
     while (1) {
         editorSetStatusMessage(promptLabel, prompt.c_str());
-        editorRefreshScreen();
+        editorRefreshScreen(promptLabel.size() + prompt.size(),
+                            EC.screenHeight + 2);
 
         int key = editorReadKey();
-        if (key == DEL_KEY || key == BACKSPACE) {
+
+        if (key == NO_KEY || key == UNKNOWN_KEY) {
+            continue;
+        } else if (key == DEL_KEY || key == BACKSPACE) {
             if (!prompt.empty()) {
                 prompt.pop_back();
             }
@@ -634,33 +645,49 @@ std::string editorPrompt(std::string promptLabel) {
 }
 
 void editorAi() {
-    std::string prompt = editorPrompt("Enter Prompt: %s");
+    std::string prompt = editorPrompt("Enter Prompt:%s");
 
     if (prompt.empty()) {
         editorSetStatusMessage("Text generation aborted.");
         return;
     }
-
-    try {
-        std::string response = CallGemini(prompt);
-        std::string line = "";
-        for (auto itr = response.begin(); itr != response.end(); itr++) {
-            if (*itr == '\n' || *itr == '\r') {
-                editorInsertRow(EC.row.size(), line);
-                line = "";
-                continue;
-            }
-            line += *itr;
-        }
-        EC.dirty++;
-    } catch (const LLMError &e) {
-        editorSetStatusMessage("Error: %s , Message: %s", e.getErrorType(),
-                               e.what());
-        return;
-    } catch (const std::exception &e) {
-        editorSetStatusMessage("Exception: %s", e.what());
+    bool promptSent = EC.aiClient.SendPrompt(prompt);
+    if (!promptSent) {
+        editorSetStatusMessage("Prompt could not be sent, Ai busy!");
         return;
     }
+    editorSetStatusMessage("Ai working...");
+    bool loop = true;
+    EC.cy = EC.row.size();
+    EC.cx = 0;
+    while (loop) {
+        editorRefreshScreen();
+        LlmResponse res = EC.aiClient.GetNextResponse();
+        switch (res.status) {
+            case LlmResponse::Status::RUNNING:
+                for (char c : res.text) {
+                    if (c == '\n') {
+                        editorInsertNewLine();
+                    } else if (c == '\r') {
+                        continue;
+                    } else {
+                        editorInsertChar(c);
+                    }
+                }
+                break;
+            case LlmResponse::Status::FALIURE:
+                editorSetStatusMessage("Error! %s", res.error.what());
+                loop = false;
+                break;
+            case LlmResponse::Status::WAITING:
+                break;
+            case LlmResponse::Status::FINISHED:
+                loop = false;
+                break;
+        }
+    }
+    editorSetStatusMessage("Prompt finished");
+    return;
 }
 
 void editorProcessKeyPress() {
