@@ -3,6 +3,7 @@ setlocal enableDelayedExpansion
 
 :: Define the project root and build directory
 set "CLEAN=%1"
+set "RUN=%2"
 set "PROJECT_ROOT=./"
 set "BUILD_DIR=%PROJECT_ROOT%\build"
 set "APP_NAME=TerminalTextEditorWindows"
@@ -43,7 +44,6 @@ if /I "%CLEAN%" == "clean" (
 :: --- Step 2: Configure CMake ---
 echo Configuring CMake...
 pushd "%BUILD_DIR%"
-rem The crucial part: -G "Ninja" and assuming MSVC compiler is in PATH (from Dev Cmd Prompt)
 cmake .. -G "Ninja"
 if %errorlevel% neq 0 (
     echo ERROR: CMake configuration failed.
@@ -69,6 +69,9 @@ echo Build Done!
 echo.
 
 :: --- Step 4: Run the Application ---
+if /I "%RUN%" == "BUILD" (
+	goto :process_finished
+)	
 echo Running app: %APP_NAME%.exe
 set "EXECUTABLE_PATH=%BUILD_DIR%\%APP_NAME%.exe"
 
@@ -83,6 +86,7 @@ if %errorlevel% neq 0 (
 )
 echo.
 
+:process_finished 
 echo ====================================
 echo Process Finished
 echo ====================================
